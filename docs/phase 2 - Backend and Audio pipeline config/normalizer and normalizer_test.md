@@ -382,4 +382,4 @@ Phase 3 files to build:
   internal/dsp/fingerprint.go   ← hash generation, anchor/target pairing
 ```
 
-> This summary reflects the state of `normalizer.go` and `normalizer_test.go` as committed. Ready to move into Phase 3 — `spectrogram.go` whenever you are.
+> This summary reflects the state of `normalizer.go` and `normalizer_test.go` as committed. With this Phase 3 will start with developing — `spectrogram.go`.
