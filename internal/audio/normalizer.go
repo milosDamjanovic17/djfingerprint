@@ -10,7 +10,7 @@ const (
 	int16max = 32767
 
 	// normalizationCeiling is the target peak amplitude after normalization
-	// expressed as a fraction of int16Max.
+	// expressed as a fraction of int16max.
 	// 0.95 leaves 5% headroom to avoid hard clipping at the ceiling.
 	// This means the loudest sample after normalization will be
 	// at most 0.95 * 32767 = 31128
@@ -41,7 +41,7 @@ type NormalizeResult struct {
 }
 
 // Normalize scales the amplitude of a PCMData so that its loudest sample
-// reaches the normalization ceiling (0.95 * int16Max).
+// reaches the normalization ceiling (0.95 * int16max).
 //
 // The operation is non-destructive: it returns a new PCMData with a new
 // sample slice. The original PCMData is never modified.
