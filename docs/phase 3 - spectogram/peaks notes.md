@@ -445,4 +445,4 @@ go build   → clean
 
 ---
 
-> This summary reflects the state of `peaks.go` and `peaks_test.go` as committed. Ready to move into `fingerprint.go` whenever you are.
+> This summary reflects the state of `peaks.go` and `peaks_test.go` as committed. Move forward to `fingerprint.go` to check the fingerprinting process.
