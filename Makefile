@@ -10,10 +10,16 @@ run:
 
 ## Run all tests with verbose output
 test:
+	go clean -testcache
 	go test ./internal/... -v
+
+test-pkg:
+	go clean -testcache
+	go test $(PKG) -v
 
 ## Run tests with benchmarks
 bench:
+	go clean -testcache
 	go test ./internal/... -bench=. -benchtime=3x -v
 
 ## Run the Go vet static analyzer
