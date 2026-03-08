@@ -394,5 +394,3 @@ MVP COMPLETE
     ├── Phase 6: Browser Extension
     └── Phase 7: Spotify Features
 ```
-
-> **Start with Phase 1.** When you're ready, share what you have and we'll build the migrations and tests together step by step.
