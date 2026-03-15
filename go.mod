@@ -6,4 +6,7 @@ require github.com/joho/godotenv v1.5.1
 
 require gonum.org/v1/gonum v0.17.0
 
-require github.com/lib/pq v1.11.2 // indirect
+require (
+	github.com/go-chi/chi/v5 v5.2.5 // indirect
+	github.com/lib/pq v1.11.2 // indirect
+)
