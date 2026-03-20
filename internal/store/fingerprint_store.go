@@ -198,3 +198,10 @@ func (fs *FingerprintStore) CountBySongID(songID int) (int, error) {
 	}
 	return count, nil
 }
+
+// DB returns the underlying *sql.DB connection pool.
+// Used by adapter layers that need to execute queries not covered
+// by the store's own methods.
+func (fs *FingerprintStore) DB() *sql.DB {
+	return fs.db
+}
