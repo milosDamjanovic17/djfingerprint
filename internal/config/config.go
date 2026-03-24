@@ -57,7 +57,7 @@ func Load() (*Config, error) {
 		DBName:						getEnvString("DB_NAME", "djfingerprint"),
 		DBSSLMode:					getEnvString("DB_SSLMODE", "disable"),
 		DBUser:						getEnvString("DB_USER", "djapp"),
-		DBPassword:					getEnvString("DB_PASSWORD", ""),
+		DBPassword:					getEnvString("DB_PASSWORD", "moosed123"),
 
 		// Audio
 		FFmpegPath:					getEnvString("FFMPEG_PATH", "ffmpeg"),

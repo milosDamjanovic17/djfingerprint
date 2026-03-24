@@ -49,7 +49,7 @@ func RunMigrations(db *sql.DB) error {
 					hash        INTEGER     NOT NULL,
 					song_id     INTEGER     NOT NULL
 					            REFERENCES songs(id) ON DELETE CASCADE,
-					anchor_time REAL        NOT NULL
+					anchor_time INTEGER     NOT NULL
 				)`,
 		},
 		{

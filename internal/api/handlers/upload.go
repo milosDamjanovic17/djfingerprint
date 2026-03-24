@@ -1,14 +1,17 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/dhowden/tag"
 	"github.com/milosDamjanovic17/djfingerprint/internal/api/dto"
 	"github.com/milosDamjanovic17/djfingerprint/internal/audio"
 	"github.com/milosDamjanovic17/djfingerprint/internal/dsp"
@@ -71,7 +74,12 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ── 5. Write to temp file for FFmpeg ─────────────────────────────
+	// ── 5. Parse ID3 / metadata tags ─────────────────────────────────
+	// Attempt to read embedded tags (ID3v1, ID3v2, FLAC, M4A, OGG).
+	// Failures are non-fatal — we fall back to form fields or nulls.
+	fileTags := readTags(fileBytes)
+
+	// ── 6. Write to temp file for FFmpeg ─────────────────────────────
 	// audio.DecodeFile requires a file path — FFmpeg reads from disk.
 	tmpFile, err := writeTempFile(fileBytes)
 	if err != nil {
@@ -84,7 +92,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.Remove(tmpFile)
 
-	// ── 6. Decode audio via FFmpeg ───────────────────────────────────
+	// ── 7. Decode audio via FFmpeg ───────────────────────────────────
 	pcm, err := audio.DecodeFile(tmpFile, "")
 	if err != nil {
 		writeError(w,
@@ -95,7 +103,10 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ── 7. Compute spectrogram ───────────────────────────────────────
+	// Duration derived from the decoded PCMData (computed by the decoder from sample count).
+	durationMs := int(pcm.Duration.Milliseconds())
+
+	// ── 8. Compute spectrogram ───────────────────────────────────────
 	spec, err := dsp.Compute(pcm)
 	if err != nil {
 		writeError(w,
@@ -106,7 +117,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ── 8. Extract peaks and generate hashes ─────────────────────────
+	// ── 9. Extract peaks and generate hashes ─────────────────────────
 	peaks, _ := dsp.ExtractPeaks(spec)
 
 	queryHashes, err := dsp.GenerateHashes(peaks, 0)
@@ -119,17 +130,8 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(queryHashes) == 0 {
-		writeError(w,
-			http.StatusBadRequest,
-			dto.ErrCodeInvalidFile,
-			"audio file is too short or contains no usable audio",
-		)
-		return
-	}
-
-	// ── 9. Build song record ─────────────────────────────────────────
-	song := buildSongFromRequest(req, fileHash)
+	// ── 10. Build song record ─────────────────────────────────────────
+	song := buildSongFromRequest(req, fileHash, fileTags, durationMs)
 
 	// ── 10. Insert song record ───────────────────────────────────────
 	if err := h.songStore.CreateSong(ctx, song); err != nil {
@@ -187,24 +189,105 @@ func writeTempFile(data []byte) (string, error) {
 	return tmp.Name(), nil
 }
 
+// audioTags holds metadata extracted from an audio file's embedded tags.
+type audioTags struct {
+	Title  string
+	Artist string
+	Album  string
+}
+
+// readTags attempts to parse embedded metadata tags (ID3, FLAC, M4A, OGG)
+// from raw audio bytes. Returns nil on any failure — tags are optional.
+func readTags(data []byte) *audioTags {
+	m, err := tag.ReadFrom(bytes.NewReader(data))
+	if err != nil {
+		return nil
+	}
+	return &audioTags{
+		Title:  m.Title(),
+		Artist: m.Artist(),
+		Album:  m.Album(),
+	}
+}
+
 // buildSongFromRequest constructs a models.Song from an upload request.
-func buildSongFromRequest(req *dto.UploadRequest, fileHash string) *models.Song {
+// Metadata priority (highest → lowest):
+//  1. Explicit form fields (title, artist, album)
+//  2. Embedded ID3/FLAC/M4A tags
+//  3. Filename parsed as "Artist - Title.ext" (common DJ track naming)
+//
+// durationMs comes from the decoded PCM sample count.
+func buildSongFromRequest(req *dto.UploadRequest, fileHash string, tags *audioTags, durationMs int) *models.Song {
 	song := &models.Song{
 		FileHash:  fileHash,
 		Source:    "manual",
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	if req.HasTitle() {
-		song.Title = &req.Title
+
+	// Populate duration from decoded audio (always available after FFmpeg decode)
+	if durationMs > 0 {
+		song.DurationMs = &durationMs
 	}
-	if req.HasArtist() {
-		song.Artist = &req.Artist
+
+	// Parse filename as last-resort fallback ("Artist - Title.mp3")
+	filenameArtist, filenameTitle := parseFilename(req.Filename())
+
+	// Resolve title: form field > tag > filename
+	title := req.Title
+	if title == "" && tags != nil {
+		title = tags.Title
 	}
-	if req.HasAlbum() {
-		song.Album = &req.Album
+	if title == "" {
+		title = filenameTitle
 	}
+
+	// Resolve artist: form field > tag > filename
+	artist := req.Artist
+	if artist == "" && tags != nil {
+		artist = tags.Artist
+	}
+	if artist == "" {
+		artist = filenameArtist
+	}
+
+	// Resolve album: form field > tag (no filename fallback for album)
+	album := req.Album
+	if album == "" && tags != nil {
+		album = tags.Album
+	}
+
+	if title != "" {
+		song.Title = &title
+	}
+	if artist != "" {
+		song.Artist = &artist
+	}
+	if album != "" {
+		song.Album = &album
+	}
+
 	return song
+}
+
+// parseFilename extracts artist and title from a filename using the
+// common DJ track convention: "Artist - Title.ext"
+// Returns empty strings if the pattern is not matched.
+func parseFilename(filename string) (artist, title string) {
+	// Strip extension
+	name := filename
+	if idx := strings.LastIndex(name, "."); idx != -1 {
+		name = name[:idx]
+	}
+
+	// Split on first " - "
+	const sep = " - "
+	idx := strings.Index(name, sep)
+	if idx == -1 {
+		return "", ""
+	}
+
+	return strings.TrimSpace(name[:idx]), strings.TrimSpace(name[idx+len(sep):])
 }
 
 // withTimeout wraps a context with the standard request timeout.
