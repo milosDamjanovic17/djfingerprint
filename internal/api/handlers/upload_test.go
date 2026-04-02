@@ -305,7 +305,7 @@ func TestBuildSongFromRequest_WithAllMetadata(t *testing.T) {
 		Album:  "Flatland",
 	}
 
-	song := buildSongFromRequest(req, "abc123")
+	song := buildSongFromRequest(req, "abc123", nil, 0)
 
 	if song.FileHash != "abc123" {
 		t.Errorf("expected FileHash='abc123', got %q", song.FileHash)
@@ -326,7 +326,7 @@ func TestBuildSongFromRequest_WithAllMetadata(t *testing.T) {
 
 func TestBuildSongFromRequest_NoMetadata_NilPointers(t *testing.T) {
 	req := &dto.UploadRequest{}
-	song := buildSongFromRequest(req, "abc123")
+	song := buildSongFromRequest(req, "abc123", nil, 0)
 
 	if song.Title != nil {
 		t.Error("expected nil Title when not provided")

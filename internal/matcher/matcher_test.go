@@ -117,7 +117,7 @@ func TestMatch_SingleSong_CorrectlyIdentified(t *testing.T) {
 func TestMatch_SingleSong_ScoreEqualsMatchCount(t *testing.T) {
 	const songID = 1
 	const offset = 500
-	const matchCount = 15
+	const matchCount = 25
 
 	queryHashes, dbResults := makeCoherentResults(songID, offset, matchCount)
 
@@ -333,15 +333,15 @@ func TestMatch_FewerThanThreeQualify_ReturnsOnlyQualifying(t *testing.T) {
 	var allQuery []dsp.FingerprintHash
 	var allDB []models.HashResult
 
-	// Song 1: 20 matches — qualifies
-	q1, d1 := makeCoherentResults(1, 100, 20)
+	// Song 1: 30 matches — qualifies
+	q1, d1 := makeCoherentResults(1, 100, 30)
 	for i := range q1 {
 		q1[i].Hash += 0
 		d1[i].Hash += 0
 	}
 
-	// Song 2: 15 matches — qualifies
-	q2, d2 := makeCoherentResults(2, 200, 15)
+	// Song 2: 25 matches — qualifies
+	q2, d2 := makeCoherentResults(2, 200, 25)
 	for i := range q2 {
 		q2[i].Hash += 10000
 		d2[i].Hash += 10000
@@ -667,13 +667,15 @@ func TestScoreHistogram_SingleSong_PeakFound(t *testing.T) {
 // -----------------------------------------------------------------------
 
 func TestFilterByMinScore_AllAbove_NoneRemoved(t *testing.T) {
+	// Use a small totalQueryHashes so the ratio threshold stays
+	// below MinScore and only the absolute threshold applies.
 	results := []MatchResult{
-		{SongID: 1, Score: 10},
-		{SongID: 2, Score: 20},
+		{SongID: 1, Score: MinScore + 10},
+		{SongID: 2, Score: MinScore + 50},
 		{SongID: 3, Score: MinScore},
 	}
 
-	filtered := filterByMinScore(results)
+	filtered := filterByMinScore(results, 1000)
 
 	if len(filtered) != 3 {
 		t.Errorf("expected 3 results, got %d", len(filtered))
@@ -687,7 +689,7 @@ func TestFilterByMinScore_AllBelow_ReturnsEmpty(t *testing.T) {
 		{SongID: 3, Score: 0},
 	}
 
-	filtered := filterByMinScore(results)
+	filtered := filterByMinScore(results, 10000)
 
 	if len(filtered) != 0 {
 		t.Errorf("expected empty results, got %d", len(filtered))
@@ -696,13 +698,13 @@ func TestFilterByMinScore_AllBelow_ReturnsEmpty(t *testing.T) {
 
 func TestFilterByMinScore_Mixed_OnlyAboveReturned(t *testing.T) {
 	results := []MatchResult{
-		{SongID: 1, Score: 20},       // above — keep
-		{SongID: 2, Score: MinScore}, // exactly at — keep
-		{SongID: 3, Score: 2},        // below — discard
-		{SongID: 4, Score: 100},      // above — keep
+		{SongID: 1, Score: MinScore + 5}, // above — keep
+		{SongID: 2, Score: MinScore},     // exactly at — keep
+		{SongID: 3, Score: 2},            // below — discard
+		{SongID: 4, Score: 100},          // above — keep
 	}
 
-	filtered := filterByMinScore(results)
+	filtered := filterByMinScore(results, 1000)
 
 	if len(filtered) != 3 {
 		t.Errorf("expected 3 results, got %d", len(filtered))
@@ -711,6 +713,28 @@ func TestFilterByMinScore_Mixed_OnlyAboveReturned(t *testing.T) {
 	for _, r := range filtered {
 		if r.SongID == 3 {
 			t.Error("song 3 with score below MinScore should have been filtered out")
+		}
+	}
+}
+
+func TestFilterByMinScore_RatioThreshold_Applies(t *testing.T) {
+	// With 10000 query hashes and MinScoreRatio=0.003, the ratio
+	// threshold is 30 — higher than MinScore (20).
+	// Scores below 30 should be filtered even though they exceed MinScore.
+	results := []MatchResult{
+		{SongID: 1, Score: 25},  // above MinScore but below ratio threshold — discard
+		{SongID: 2, Score: 50},  // above both — keep
+		{SongID: 3, Score: 100}, // above both — keep
+	}
+
+	filtered := filterByMinScore(results, 10000)
+
+	if len(filtered) != 2 {
+		t.Errorf("expected 2 results (ratio threshold=30), got %d", len(filtered))
+	}
+	for _, r := range filtered {
+		if r.SongID == 1 {
+			t.Error("song 1 with score 25 should have been filtered by ratio threshold")
 		}
 	}
 }

@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 
 export type RecorderState = 'idle' | 'recording' | 'stopped' | 'error'
+export type AudioSource = 'microphone' | 'browser'
 
 export function useRecorder() {
   const state = ref<RecorderState>('idle')
@@ -20,17 +21,17 @@ export function useRecorder() {
     return candidates.find(t => MediaRecorder.isTypeSupported(t)) ?? ''
   }
 
-  async function start(): Promise<void> {
+  async function start(source: AudioSource = 'microphone'): Promise<void> {
     error.value = null
     chunks = []
 
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-    } catch {
-      error.value = 'Microphone access denied. Please allow microphone access and try again.'
-      state.value = 'error'
-      return
+    if (source === 'browser') {
+      stream = await startBrowserCapture()
+    } else {
+      stream = await startMicCapture()
     }
+
+    if (!stream) return // error already set
 
     const mimeType = getSupportedMimeType()
 
@@ -49,6 +50,55 @@ export function useRecorder() {
 
     mediaRecorder.start(100) // collect chunks every 100 ms
     state.value = 'recording'
+  }
+
+  async function startMicCapture(): Promise<MediaStream | null> {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+    } catch {
+      error.value = 'Microphone access denied. Please allow microphone access and try again.'
+      state.value = 'error'
+      return null
+    }
+  }
+
+  async function startBrowserCapture(): Promise<MediaStream | null> {
+    // getDisplayMedia lets the user pick a tab / window / screen.
+    // Audio capture is supported in Chrome and Edge; Firefox and Safari have limited support.
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      error.value = 'Browser audio capture is not supported in this browser. Try Chrome or Edge.'
+      state.value = 'error'
+      return null
+    }
+
+    let displayStream: MediaStream
+    try {
+      // Ask for both video and audio — some browsers require video:true to
+      // allow audio capture at all. We discard the video tracks immediately after.
+      displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+      })
+    } catch {
+      error.value = 'Screen/audio share cancelled or denied.'
+      state.value = 'error'
+      return null
+    }
+
+    // Stop video tracks right away — we only need audio.
+    displayStream.getVideoTracks().forEach(t => t.stop())
+
+    const audioTracks = displayStream.getAudioTracks()
+    if (audioTracks.length === 0) {
+      error.value =
+        'No audio captured. Make sure to check "Share audio" (or "Share tab audio") in the browser dialog.'
+      state.value = 'error'
+      displayStream.getTracks().forEach(t => t.stop())
+      return null
+    }
+
+    // Build an audio-only stream from the captured tracks.
+    return new MediaStream(audioTracks)
   }
 
   function stop(): Promise<Blob> {

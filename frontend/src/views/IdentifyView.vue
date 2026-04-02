@@ -1,21 +1,23 @@
 <script setup lang="ts">
-import { onUnmounted, computed } from 'vue'
+import { onUnmounted, computed, ref } from 'vue'
 import { useIdentifyStore } from '@/stores/identify'
-import { useRecorder } from '@/composables/useRecorder'
+import { useRecorder, type AudioSource } from '@/composables/useRecorder'
 
 const RECORD_SECONDS = 10
 
 const store = useIdentifyStore()
 const recorder = useRecorder()
 
+const audioSource = ref<AudioSource>('microphone')
+
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 async function startIdentify(): Promise<void> {
   store.reset()
-  await recorder.start()
+  await recorder.start(audioSource.value)
 
   if (recorder.state.value === 'error') {
-    store.setError(recorder.error.value ?? 'Microphone error.')
+    store.setError(recorder.error.value ?? 'Audio capture error.')
     return
   }
 
@@ -69,6 +71,48 @@ onUnmounted(() => {
         <p class="mt-1 text-sm text-zinc-400">Hold your device near the music and tap the button</p>
       </div>
 
+      <!-- ── Source toggle ──────────────────────────────────────────────────── -->
+      <div class="flex items-center gap-1 rounded-xl bg-zinc-900 border border-zinc-700 p-1">
+        <button
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+          :class="audioSource === 'microphone'
+            ? 'bg-blue-600 text-white shadow'
+            : 'text-zinc-400 hover:text-white'"
+          @click="audioSource = 'microphone'"
+        >
+          <!-- mic icon -->
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
+            viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75
+                 m-3.75 0h7.5M12 3a4.125 4.125 0 0 0-4.125 4.125v6.75a4.125 4.125 0 0 0 8.25
+                 0v-6.75A4.125 4.125 0 0 0 12 3Z" />
+          </svg>
+          Microphone
+        </button>
+        <button
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+          :class="audioSource === 'browser'
+            ? 'bg-blue-600 text-white shadow'
+            : 'text-zinc-400 hover:text-white'"
+          @click="audioSource = 'browser'"
+        >
+          <!-- speaker / browser audio icon -->
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
+            viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424
+                 M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53
+                 l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12
+                 c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z" />
+          </svg>
+          Browser Audio
+        </button>
+      </div>
+      <p v-if="audioSource === 'browser'" class="text-xs text-zinc-500 -mt-4 text-center max-w-xs">
+        Chrome/Edge only. You'll be asked to pick a tab — make sure to enable "Share tab audio".
+      </p>
+
       <!-- ── IDLE ────────────────────────────────────────────────────────────── -->
       <template v-if="store.phase === 'idle'">
         <button
@@ -84,7 +128,9 @@ onUnmounted(() => {
                  A4.125 4.125 0 0 0 12 3Z" />
           </svg>
         </button>
-        <p class="text-sm text-zinc-500">Tap to start listening</p>
+        <p class="text-sm text-zinc-500">
+          {{ audioSource === 'browser' ? 'Tap to capture browser audio' : 'Tap to start listening' }}
+        </p>
       </template>
 
       <!-- ── RECORDING ───────────────────────────────────────────────────────── -->

@@ -8,11 +8,20 @@ import (
 )
 
 const (
-	// MinScore is the minimum coherence score a song must achieve
-	// to be included in the Top 3 results.
-	// Songs below this threshold are almost certainly coincidental
-	// hash collisions rather than genuine matches.
-	MinScore = 5
+	// MinScore is the minimum absolute coherence score a song must
+	// achieve to be included in the Top 3 results.
+	// A genuine 10-second match typically produces 50-200+ coherent
+	// hashes at the same time offset. Random collisions between
+	// unrelated songs rarely exceed 10-15.
+	// Set to 20 to cleanly separate genuine matches from noise.
+	MinScore = 20
+
+	// MinScoreRatio is the minimum fraction of query hashes that must
+	// match coherently. This prevents weak matches when the absolute
+	// score technically exceeds MinScore but represents a tiny fraction
+	// of the total hashes — likely noise rather than a genuine match.
+	// 0.3% of query hashes (e.g. 18 out of 6000 for a 10s snippet).
+	MinScoreRatio = 0.003
 
 	// TopN is the maximum number of results returned by Match.
 	// The API always returns at most 3 candidates.
@@ -98,9 +107,10 @@ func Match(
 	// Record which ΔT produced the peak — that is the time offset.
 	results := scoreHistogram(histogram)
 
-	// Step 4: Filter out results below MinScore.
-	// Discard coincidental collisions.
-	results = filterByMinScore(results)
+	// Step 4: Filter out results below MinScore and MinScoreRatio.
+	// Both thresholds must be met — this catches coincidental
+	// collisions that pass one check but not the other.
+	results = filterByMinScore(results, len(queryHashes))
 
 	// Step 5: Sort by score descending — best match first.
 	sort.Slice(results, func(i, j int) bool {
@@ -205,12 +215,24 @@ func scoreHistogram(histogram map[int]map[int]int) []MatchResult {
 	return results
 }
 
-// filterByMinScore removes results whose score is below MinScore.
-// Returns a new slice containing only results that meet the threshold.
-func filterByMinScore(results []MatchResult) []MatchResult {
+// filterByMinScore removes results that don't meet both thresholds:
+//  1. Absolute: score must be >= MinScore (20)
+//  2. Relative: score must be >= MinScoreRatio * totalQueryHashes
+//
+// The relative check prevents weak matches where the absolute score
+// technically passes but represents a negligible fraction of query hashes.
+func filterByMinScore(results []MatchResult, totalQueryHashes int) []MatchResult {
+	ratioThreshold := int(float64(totalQueryHashes) * MinScoreRatio)
+
+	// Use whichever threshold is higher
+	threshold := MinScore
+	if ratioThreshold > threshold {
+		threshold = ratioThreshold
+	}
+
 	filtered := make([]MatchResult, 0, len(results))
 	for _, r := range results {
-		if r.Score >= MinScore {
+		if r.Score >= threshold {
 			filtered = append(filtered, r)
 		}
 	}
