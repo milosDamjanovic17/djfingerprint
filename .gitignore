@@ -35,3 +35,7 @@ tests/testdata/*.webm
 
 # Keep the testdata folder itself
 !tests/testdata/.gitkeep
+
+
+# include CLAUDE.md
+CLAUDE.md
